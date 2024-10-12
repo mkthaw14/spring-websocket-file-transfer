@@ -1,0 +1,126 @@
+<html>
+    <head>
+        <title>Web Socket File Transfer</title>
+    </head>
+    <body>
+        <h1>Hello World!</h1>
+
+        <input type="file" id="file-input">
+        <button id="submit-file-btn">Upload</button>
+
+        <script th:src="@{/js/plugins/jquery-3.7.1.min.js}"></script>
+        <script>
+            const CHUNK_SIZE = 1024 * 1024;
+            let newSize = 0;
+            let webSocket = null;
+            $(document).ready(function() {
+                console.log("hello");
+                webSocket = new WebSocket("ws://localhost:8080/web-socket");
+
+                webSocket.onopen = (event) => {
+                    webSocket.send("hello");
+                };
+
+                webSocket.onclose = (event) => {
+                    alert("Connection closed");
+                }
+
+                $("#submit-file-btn").on("click", function() {
+                    sendFile().then(result => {
+                        console.log(result);
+                    });
+                })
+            })
+
+            window.setInterval(function() {
+                console.log(webSocket.readyState);
+
+
+
+            }, 1000);
+
+
+            function sendFile() {
+                const file = $("#file-input").prop("files")[0];
+                console.log(file);
+                const chunkSize = 1024 * 3;
+                let start = 0;
+
+                console.log("file size " + file.size);
+                let numOfChunks = Math.round(file.size / chunkSize);
+                console.log("no of chunk " + numOfChunks);
+
+                let promises = [];
+                let chunkIndex = 0;
+                let fileSize = file.size;
+                while(start < fileSize) {
+                    let chunk = file.slice(start, start + chunkSize);
+
+                    newSize = start + chunkSize;
+                    if(newSize > fileSize) {
+                        console.log(start + " > " + fileSize);
+                        start = fileSize - start;
+                    }
+                    else {
+                        console.log(start + " not > " + fileSize);
+                        start += chunkSize;
+                    }
+
+                    chunkIndex++;
+
+                    promises.push(sliceFileIntoChunkAndSend(chunkIndex, chunkSize, chunk, fileSize));
+                }
+
+                return Promise.all(promises);
+            }
+
+            // function toUint8Array(blob) {
+            //     return new Response(blob).arrayBuffer().then( buffer => {
+            //         uint = [...new Uint8Array(blob)];
+            //         return uint;
+            //     })
+            // }
+
+            async function convertToUint8Array(blob) {
+                return blob.arrayBuffer();
+            }
+
+
+            async function sliceFileIntoChunkAndSend(chunkIndex, chunkSize, chunk, fileSize) {
+                let chunkArrayBuffer = await chunk.arrayBuffer();
+                console.log(chunkArrayBuffer);
+
+                console.log("chunk index : " + chunkIndex);
+                //Convert to Uint8Array
+                const encodedChunk = new Uint8Array(chunkArrayBuffer);
+
+                console.log(encodedChunk);
+                console.log("encodedChunk " + encodedChunk.byteLength);
+                //create meta data as json object
+                const metaData = {
+                    fileName : 'pict.png',
+                    chunkIndex : chunkIndex,
+                    chunkSize : chunkSize,
+                    fileSize : fileSize
+                }
+
+                //convert metaData into string and then convert it into Uint8Array
+                const encodedMetaData = new TextEncoder().encode(JSON.stringify(metaData));
+
+                //create array buffer to hold both meta data and binary chunk
+                const combinedArrayBuffer = new ArrayBuffer(encodedMetaData.byteLength + encodedChunk.byteLength);
+                const combinedView = new Uint8Array(combinedArrayBuffer);
+
+                //copy both encodeMetaData and encodeChunk to combinedView
+                combinedView.set(encodedMetaData, 0); // place metaData at 0 position
+                combinedView.set(encodedChunk, encodedMetaData.byteLength); // place chunk data immediately at the end of metaData
+
+                console.log("metaData length " + encodedMetaData.byteLength);
+                console.log("encodedChunk " + encodedChunk.byteLength);
+                webSocket.send(combinedArrayBuffer);
+            }
+
+
+        </script>
+    </body>
+</html>
